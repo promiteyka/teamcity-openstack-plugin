@@ -100,7 +100,10 @@ public class OpenstackCloudImage implements CloudImage {
         for (int i = 0; i < trials; i++) {
             String v = openstackApi.getImageIdByName(openstackImageName);
             if (v != null && !v.isEmpty()) return v;
-            try { Thread.sleep(500L); } catch (InterruptedException ex) { break; }
+            try { Thread.sleep(500L); } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                break;
+            }
         }
         return null;
     }

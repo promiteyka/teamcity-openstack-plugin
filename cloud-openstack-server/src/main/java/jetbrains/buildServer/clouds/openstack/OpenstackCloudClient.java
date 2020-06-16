@@ -125,7 +125,10 @@ public class OpenstackCloudClient extends BuildServerAdapter implements CloudCli
                     executor = null;
                 }
             }
-            catch (InterruptedException | ExecutionException | TimeoutException ex) {
+            catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+            catch (ExecutionException | TimeoutException ex) {
                 LOG.error(String.format("Initialization failure: %s: %s", ex.getClass().getSimpleName(), ex.getMessage()));
             }
         }
