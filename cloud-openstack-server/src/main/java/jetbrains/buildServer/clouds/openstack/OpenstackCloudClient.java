@@ -5,7 +5,10 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
 
+import com.jcabi.log.*;
+import jetbrains.buildServer.serverSide.*;
 import org.jclouds.openstack.nova.v2_0.options.CreateServerOptions;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -22,9 +25,6 @@ import jetbrains.buildServer.clouds.CloudImage;
 import jetbrains.buildServer.clouds.CloudInstance;
 import jetbrains.buildServer.clouds.CloudInstanceUserData;
 import jetbrains.buildServer.log.Loggers;
-import jetbrains.buildServer.serverSide.AgentDescription;
-import jetbrains.buildServer.serverSide.BuildServerAdapter;
-import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.util.StringUtil;
 
 public class OpenstackCloudClient extends BuildServerAdapter implements CloudClientEx {
@@ -38,6 +38,8 @@ public class OpenstackCloudClient extends BuildServerAdapter implements CloudCli
     private CloudErrorInfo errorInfo = null;
     @Nullable
     private final Integer instanceCap;
+    private ScheduledExecutorService executor;
+    private ScheduledFuture<?> initialized;
 
     public OpenstackCloudClient(@NotNull final CloudClientParameters params, @NotNull ServerPaths serverPaths,
             @NotNull final ExecutorServiceFactory factory) {
@@ -66,7 +68,7 @@ public class OpenstackCloudClient extends BuildServerAdapter implements CloudCli
         }
 
         final StringBuilder error = new StringBuilder();
-        final IdGenerator imageIdGenerator = new IdGenerator();
+        /* final IdGenerator imageIdGenerator = new IdGenerator();*/
         for (Map.Entry<String, Map<String, String>> entry : map.entrySet()) {
             final String imageName = entry.getKey().trim();
             if (entry.getValue() == null) {
@@ -94,7 +96,8 @@ public class OpenstackCloudClient extends BuildServerAdapter implements CloudCli
                     "Adding cloud image: imageName=%s, openstackImageName=%s, flavorName=%s, networkName=%s, networkId=%s, securityGroupName=%s, keyPair=%s, floatingIp=%s",
                     imageName, openstackImageName, flavorName, networkName, networkId, securityGroupName, keyPair, autoFloatingIp));
 
-            final OpenstackCloudImage image = new OpenstackCloudImage(openstackApi, imageIdGenerator.next(), imageName, openstackImageName,
+            LOG.info(String.format("Create image  [%s] ...", imageName));
+            final OpenstackCloudImage image = new OpenstackCloudImage(openstackApi, imageName /* imageIdGenerator.next()*/, imageName, openstackImageName,
                     flavorName, autoFloatingIp, options, userScriptPath, serverPaths, factory.createExecutorService(imageName));
 
             cloudImages.add(image);
@@ -102,9 +105,30 @@ public class OpenstackCloudClient extends BuildServerAdapter implements CloudCli
         }
 
         errorInfo = error.length() == 0 ? null : new CloudErrorInfo(error.substring(1));
+
+        // start asynchronous initialization:
+        this.executor = Executors.newSingleThreadScheduledExecutor();
+        this.initialized = this.executor.schedule(new VerboseRunnable(() -> {
+            for (OpenstackCloudImage cloudImage : cloudImages) {
+                cloudImage.initialize();
+            }
+        }, true), 1, TimeUnit.SECONDS);
     }
 
     public boolean isInitialized() {
+        // wait for initialization completion:
+        if (this.initialized != null) {
+            try {
+                this.initialized.get((long) (cloudImages.size() * 3), TimeUnit.SECONDS);
+                if (this.executor != null) {
+                    executor.shutdown();
+                    executor = null;
+                }
+            }
+            catch (InterruptedException | ExecutionException | TimeoutException ex) {
+                LOG.error(String.format("Initialization failure: %s: %s", ex.getClass().getSimpleName(), ex.getMessage()));
+            }
+        }
         return true;
     }
 
@@ -178,5 +202,7 @@ public class OpenstackCloudClient extends BuildServerAdapter implements CloudCli
             image.dispose();
         }
         cloudImages.clear();
+        if (executor != null) executor.shutdown();
     }
+
 }
