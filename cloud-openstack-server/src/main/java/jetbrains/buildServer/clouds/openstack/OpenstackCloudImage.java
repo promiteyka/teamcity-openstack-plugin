@@ -7,23 +7,21 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import com.intellij.openapi.diagnostic.*;
-import jetbrains.buildServer.log.*;
+import org.jclouds.openstack.nova.v2_0.domain.Server;
 import org.jclouds.openstack.nova.v2_0.features.ServerApi;
 import org.jclouds.openstack.nova.v2_0.options.CreateServerOptions;
-import org.jclouds.openstack.nova.v2_0.domain.Server;
 import org.jclouds.openstack.v2_0.domain.Resource;
-import org.jclouds.openstack.nova.v2_0.options.CreateServerOptions;
-import org.jclouds.collect.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import com.intellij.openapi.diagnostic.Logger;
 import com.jcabi.log.VerboseRunnable;
 
 import jetbrains.buildServer.clouds.CloudErrorInfo;
 import jetbrains.buildServer.clouds.CloudImage;
 import jetbrains.buildServer.clouds.CloudInstanceUserData;
 import jetbrains.buildServer.clouds.InstanceStatus;
+import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.ServerPaths;
 
 public class OpenstackCloudImage implements CloudImage {
@@ -86,21 +84,22 @@ public class OpenstackCloudImage implements CloudImage {
     }
 
     // Initialize the image
-    public void initialize () {
+    public void initialize() {
         final String openstackImageId = initialGetOpenstackImageId(5);
         if (openstackImageId != null && !openstackImageId.isEmpty()) {
-            this.executor.schedule(new VerboseRunnable(() -> {
-                restoreInstances(openstackImageId);
-            }, true), 1, TimeUnit.SECONDS);
+            this.executor.schedule(new VerboseRunnable(() -> restoreInstances(openstackImageId), true), 1, TimeUnit.SECONDS);
         }
     }
 
     // Initially obtain openstack image id
-    private String initialGetOpenstackImageId (int trials) {
+    private String initialGetOpenstackImageId(int trials) {
         for (int i = 0; i < trials; i++) {
             String v = openstackApi.getImageIdByName(openstackImageName);
-            if (v != null && !v.isEmpty()) return v;
-            try { Thread.sleep(500L); } catch (InterruptedException ex) {
+            if (v != null && !v.isEmpty())
+                return v;
+            try {
+                Thread.sleep(500L);
+            } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 break;
             }
@@ -109,25 +108,22 @@ public class OpenstackCloudImage implements CloudImage {
     }
 
     // Restore instances of the image
-    public void restoreInstances (String openstackImageId) {
-        LOG.info(String.format("Restore instances of openstack image id=%s ...", openstackImageId));
+    public void restoreInstances(String openstackImageId) {
+        LOG.info(String.format("Restore instances for openstack image id=%s", openstackImageId));
         Collection<Server> list = openstackApi.getNovaServerApi().listInDetail().concat().toList();
         for (Server server : list) {
             // select servers of the specified image id:
             Resource simage = server.getImage();
-            if (simage != null) {
-                if (openstackImageId.equals(simage.getId())) {
-                    // select only ACTIVE servers:
-                    Server.Status status = server.getStatus();
-                    switch (status) {
-                        case ACTIVE:
-                            // restore instance:
-                            final String instanceId = instanceIdGenerator.next();
-                            final OpenstackCloudInstance instance = new OpenstackCloudInstance(this,
-                              instanceId, serverPaths, executor, server, InstanceStatus.RUNNING);
-                            instances.put(instanceId, instance);
-                            break;
-                    }
+            if (simage != null && openstackImageId.equals(simage.getId())) {
+                // select only ACTIVE servers:
+                // TODO : Why only ACTIVE ?
+                Server.Status status = server.getStatus();
+                if (Server.Status.ACTIVE.equals(status)) {
+                    // restore instance:
+                    final String instanceId = instanceIdGenerator.next();
+                    final OpenstackCloudInstance instance = new OpenstackCloudInstance(this, instanceId, serverPaths, executor, server,
+                            InstanceStatus.RUNNING);
+                    instances.put(instanceId, instance);
                 }
             }
         }
@@ -202,7 +198,7 @@ public class OpenstackCloudImage implements CloudImage {
 
     @Nullable
     public OpenstackCloudInstance findInstanceById(@NotNull final String instanceId) {
-        LOG.info(String.format("findInstanceById(%s) ...", instanceId));
+        LOG.debug(String.format("findInstanceById(%s)", instanceId));
         return instances.get(instanceId);
     }
 
@@ -229,12 +225,7 @@ public class OpenstackCloudImage implements CloudImage {
     }
 
     void dispose() {
-        LOG.info("OpenstackCloudImage.dispose ...");
-        /*
-        for (final OpenstackCloudInstance instance : instances.values()) {
-            instance.terminate();
-        }
-        */
+        LOG.debug(String.format("Dispose image %s (id=%s)", imageName, imageId));
         instances.clear();
         executor.shutdown();
     }
