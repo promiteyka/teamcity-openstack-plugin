@@ -109,20 +109,16 @@ public class OpenstackCloudImage implements CloudImage {
 
     // Restore instances of the image
     public void restoreInstances(String openstackImageId) {
-        LOG.info(String.format("Restore instances for openstack image id=%s", openstackImageId));
+        LOG.info(String.format("Restore potential instances for openstack image: %s", imageName));
         Collection<Server> list = openstackApi.getNovaServerApi().listInDetail().concat().toList();
         for (Server server : list) {
-            // select servers of the specified image id:
+            // Restore servers of the specified image id, only with ACTIVE status
             Resource simage = server.getImage();
-            if (simage != null && openstackImageId.equals(simage.getId())) {
-                // select only ACTIVE servers:
-                // TODO : Why only ACTIVE ?
-                Server.Status status = server.getStatus();
-                if (Server.Status.ACTIVE.equals(status)) {
-                    // restore instance:
-                    final String instanceId = instanceIdGenerator.next();
-                    final OpenstackCloudInstance instance = new OpenstackCloudInstance(this, instanceId, serverPaths, executor, server,
-                            InstanceStatus.RUNNING);
+            if (simage != null && openstackImageId.equals(simage.getId()) && Server.Status.ACTIVE.equals(server.getStatus())) {
+                final String instanceId = server.getName().substring(server.getName().lastIndexOf('-') + 1);
+                if (!instances.containsKey(instanceId)) {
+                    // Add only if not already existing (sample: started at profile creation)
+                    final OpenstackCloudInstance instance = new OpenstackCloudInstance(this, instanceId, serverPaths, executor, server);
                     instances.put(instanceId, instance);
                 }
             }

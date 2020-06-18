@@ -60,27 +60,18 @@ public class OpenstackCloudInstance implements CloudInstance {
         setStatus(InstanceStatus.SCHEDULED_TO_START);
     }
 
-    public OpenstackCloudInstance (
-      @NotNull final OpenstackCloudImage image,
-      @NotNull final String instanceId,
-      @NotNull ServerPaths serverPaths,
-      @NotNull ScheduledExecutorService executor,
-      @NotNull Server server,
-      @NotNull InstanceStatus instanceStatus
-    )
-    {
-        this.cloudImage  = image;
-        this.instanceId  = instanceId;
+    public OpenstackCloudInstance(@NotNull final OpenstackCloudImage image, @NotNull final String instanceId, @NotNull ServerPaths serverPaths,
+            @NotNull ScheduledExecutorService executor, @NotNull Server server) {
+        this.cloudImage = image;
+        this.instanceId = instanceId;
         this.serverPaths = serverPaths;
-        this.executor    = executor;
-        this.startDate   = new Date();
-        final String id   = server.getId();
+        this.executor = executor;
+        this.startDate = new Date();
+        final String id = server.getId();
         final String name = server.getName();
-        this.serverCreated = ServerCreated.builder().id(id).name(name)
-          .diskConfig(server.getDiskConfig().orNull())
-          .build();
-        setStatus(instanceStatus);
-        LOG.info(String.format("Cloud instance restored: id=%s, name=%s, status=%s", id, name, status.get().name()));
+        this.serverCreated = ServerCreated.builder().id(id).name(name).diskConfig(server.getDiskConfig().orNull()).build();
+        setStatus(InstanceStatus.RUNNING);
+        LOG.info(String.format("Cloud openstack instance restored: %s", name));
     }
 
     public synchronized void updateStatus() {
